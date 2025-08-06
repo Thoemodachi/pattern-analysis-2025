@@ -18,7 +18,7 @@ def compute_new_rand_location(startLoc):
     next_point = startLoc + vector
     return next_point, rand_location
 
-iterations = 10000
+iterations = 1000
 
 plt.plot(np.real(unit_circle), np.imag(unit_circle), "b-")
 plt.plot(np.real(points), np.imag(points), "r.")
