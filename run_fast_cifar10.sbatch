@@ -5,13 +5,11 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=24G
 #SBATCH --time=00:30:00
-#SBATCH --output=%x-%j.out
+#SBATCH --output=/home/$USER/slurm_logs/%x-%j.out   # SLURM file
 
 module purge
-module load cuda/12.1  # Or the correct CUDA version on Rangpur
-# Activate your Python environment here:
-# source ~/miniconda3/etc/profile.d/conda.sh && conda activate pyt24
+module load cuda/12.1
+# source ~/miniconda3/etc/profile.d/conda.sh && conda activate ai
 
-cd ~/code   # <--- go into the code directory
-
-python fast_cifar10.py --epochs 32 --batch 1024 --workers 8
+cd ~/code
+python fast_cifar10.py --epochs 32 --batch 1024 --workers 8 --out_dir /home/$USER/runs
