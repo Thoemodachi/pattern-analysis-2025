@@ -1,5 +1,6 @@
 name: ai
 channels:
+  - pytorch
   - conda-forge
   - defaults
 dependencies:
@@ -10,3 +11,8 @@ dependencies:
   - make
   - opencv
   - tensorflow
+  - scikit-learn
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cudatoolkit=11.8
