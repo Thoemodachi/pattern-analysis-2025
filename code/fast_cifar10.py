@@ -1,38 +1,24 @@
-# DO NOT RUN ON LOCAL COMPUTER; Google Colab and Rangpur
-# fast_cifar10.py
-import math, time, os, random, sys, json
-from dataclasses import dataclass, asdict
+# DO NOT RUN ON LOCAL COMPUTER; Google Colab and Ranpur
+# fast_cifar10.py  — baseline that learns + proper val split
+
+import math, time, os, random
+from dataclasses import dataclass
 from argparse import ArgumentParser
 import torch, torch.nn as nn, torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 
 # --------------------------
 # Utilities
 # --------------------------
 def set_fast_cuda():
-    if torch.cuda.is_available():
-        torch.backends.cudnn.benchmark = True
-        try:
-            torch.set_float32_matmul_precision("high")  # TF32 matmul on Ampere+
-        except Exception:
-            pass
-
-class Tee:
-    """Mirror prints to stdout and a file."""
-    def __init__(self, path: str):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        self._file = open(path, "a", buffering=1)
-        self._stdout = sys.stdout
-    def write(self, x):
-        self._stdout.write(x)
-        self._file.write(x)
-    def flush(self):
-        self._stdout.flush()
-        self._file.flush()
+    torch.backends.cudnn.benchmark = True
+    try:
+        torch.set_float32_matmul_precision("high")  # TF32 on Ampere+
+    except Exception:
+        pass
 
 class EMA:
-    """Track EMA over floating-point parameters only; apply/restore for eval."""
     def __init__(self, model, decay=0.999):
         self.decay = decay
         self.shadow = {n: p.detach().clone()
@@ -57,38 +43,7 @@ class EMA:
                 p.data.copy_(backup[n])
 
 # --------------------------
-# MixUp / CutMix
-# --------------------------
-from torchvision.transforms import RandAugment  # used by transforms below
-
-def mixup_cutmix(x, y, num_classes=10, alpha=0.2, cutmix_prob=0.5):
-    """Returns mixed inputs and soft targets."""
-    one_hot = F.one_hot(y, num_classes=num_classes).float()
-    if alpha <= 0:
-        return x, one_hot
-    lam = torch.distributions.Beta(alpha, alpha).sample().item()
-    if random.random() < cutmix_prob:
-        # CutMix
-        B, C, H, W = x.size()
-        rx, ry = random.randrange(W), random.randrange(H)
-        r_w = int(W * math.sqrt(1 - lam))
-        r_h = int(H * math.sqrt(1 - lam))
-        x1 = max(rx - r_w // 2, 0); y1 = max(ry - r_h // 2, 0)
-        x2 = min(rx + r_w // 2, W); y2 = min(ry + r_h // 2, H)
-        perm = torch.randperm(B, device=x.device)
-        x[:, :, y1:y2, x1:x2] = x[perm, :, y1:y2, x1:x2]
-        lam = 1 - ((x2 - x1) * (y2 - y1) / (W * H))
-        targets = lam * one_hot + (1 - lam) * one_hot[perm]
-        return x, targets
-    else:
-        # MixUp
-        perm = torch.randperm(x.size(0), device=x.device)
-        x_mixed = lam * x + (1 - lam) * x[perm]
-        targets = lam * one_hot + (1 - lam) * one_hot[perm]
-        return x_mixed, targets
-
-# --------------------------
-# ResNet-18 from scratch (CIFAR stem)
+# ResNet-18 (CIFAR stem)
 # --------------------------
 class BasicBlock(nn.Module):
     expansion = 1
@@ -113,7 +68,7 @@ class BasicBlock(nn.Module):
 class ResNet18(nn.Module):
     def __init__(self, num_classes=10, width=64):
         super().__init__()
-        self.conv1 = nn.Conv2d(3, width, 3, 1, 1, bias=False)  # CIFAR stem
+        self.conv1 = nn.Conv2d(3, width, 3, 1, 1, bias=False)
         self.bn1   = nn.BatchNorm2d(width)
         self.layer1 = self._make_layer(width,   width,   2, stride=1)
         self.layer2 = self._make_layer(width,   2*width, 2, stride=2)
@@ -136,175 +91,134 @@ class ResNet18(nn.Module):
         return self.fc(x)
 
 # --------------------------
-# Args & CLI
+# Args
 # --------------------------
 @dataclass
 class Args:
     data: str = "./data"
-    batch: int = 1024
-    epochs: int = 32
-    lr: float = 0.4
+    batch: int = 128
+    epochs: int = 60
+    lr: float = 0.1
     wd: float = 5e-4
-    mixup_alpha: float = 0.2
-    cutmix_alpha: float = 1.0
-    label_smoothing: float = 0.05
     workers: int = 8
     ema: float = 0.999
     seed: int = 42
-    out_dir: str = "./runs"
+    val_size: int = 5000  # from CIFAR-10 train set (50k)
 
-def parse_args() -> Args:
-    p = ArgumentParser()
-    p.add_argument("--data", type=str, default=Args.data)
-    p.add_argument("--batch", type=int, default=Args.batch)
-    p.add_argument("--epochs", type=int, default=Args.epochs)
-    p.add_argument("--lr", type=float, default=Args.lr)
-    p.add_argument("--wd", type=float, default=Args.wd)
-    p.add_argument("--mixup_alpha", type=float, default=Args.mixup_alpha)
-    p.add_argument("--cutmix_alpha", type=float, default=Args.cutmix_alpha)
-    p.add_argument("--label_smoothing", type=float, default=Args.label_smoothing)
-    p.add_argument("--workers", type=int, default=Args.workers)
-    p.add_argument("--ema", type=float, default=Args.ema)
-    p.add_argument("--seed", type=int, default=Args.seed)
-    p.add_argument("--out_dir", type=str, default=Args.out_dir)
-    ns = p.parse_args()
-    return Args(**vars(ns))
+def parse_args():
+    ap = ArgumentParser()
+    for f in Args.__dataclass_fields__.values():
+        ap.add_argument(f"--{f.name}", type=type(f.default), default=f.default)
+    args, _ = ap.parse_known_args()
+    return args
 
 # --------------------------
 # Training
 # --------------------------
-def main(a: Args):
+def main():
+    a = parse_args()
     torch.manual_seed(a.seed); random.seed(a.seed)
-
-    # --- Run directory (SLURM-aware) ---
-    ts   = time.strftime("%Y%m%d-%H%M%S")
-    jn   = os.environ.get("SLURM_JOB_NAME", "local")
-    jid  = os.environ.get("SLURM_JOB_ID", "nojob")
-    run_name = f"{jn}-{jid}-{ts}"
-    run_dir  = os.path.join(a.out_dir, run_name)
-    os.makedirs(run_dir, exist_ok=True)
-
-    # Mirror stdout to file
-    sys.stdout = Tee(os.path.join(run_dir, "train.log"))
-    print(f"[INFO] Run dir: {run_dir}")
-    print(f"[INFO] Args: {json.dumps(asdict(a))}")
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    use_cuda = (device == "cuda")
     set_fast_cuda()
 
-    # Data
+    # Data transforms: SIMPLE baseline that learns
     mean = (0.4914, 0.4822, 0.4465); std = (0.2470, 0.2435, 0.2616)
     train_tf = transforms.Compose([
-        transforms.RandAugment(num_ops=2, magnitude=10),
+        transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         transforms.Normalize(mean, std),
     ])
-    test_tf = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
+    test_tf = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
 
-    train_set = datasets.CIFAR10(a.data, train=True, download=True, transform=train_tf)
-    test_set  = datasets.CIFAR10(a.data, train=False, download=True, transform=test_tf)
+    # Datasets
+    full_train = datasets.CIFAR10(a.data, train=True,  download=True, transform=train_tf)
+    test_set   = datasets.CIFAR10(a.data, train=False, download=True, transform=test_tf)
 
-    # DataLoader device-aware settings
-    suggested_workers = 2 if not use_cuda else a.workers
-    workers = min(a.workers, suggested_workers) if not use_cuda else a.workers
+    # Train / Val split (reproducible)
+    val_size = a.val_size
+    train_size = len(full_train) - val_size
+    gen = torch.Generator().manual_seed(a.seed)
+    train_set, val_set = random_split(full_train, [train_size, val_size], generator=gen)
 
-    train_loader = DataLoader(
-        train_set,
-        batch_size=a.batch,
-        shuffle=True,
-        num_workers=workers,
-        pin_memory=use_cuda,
-        persistent_workers=use_cuda and workers > 0,
-    )
-    test_loader  = DataLoader(
-        test_set,
-        batch_size=2048,
-        shuffle=False,
-        num_workers=workers,
-        pin_memory=use_cuda,
-        persistent_workers=use_cuda and workers > 0,
-    )
+    # Loaders
+    train_loader = DataLoader(train_set, batch_size=a.batch, shuffle=True,
+                              num_workers=a.workers, pin_memory=True, persistent_workers=True)
+    val_loader   = DataLoader(val_set,   batch_size=2048, shuffle=False,
+                              num_workers=a.workers, pin_memory=True, persistent_workers=True)
+    test_loader  = DataLoader(test_set,  batch_size=2048, shuffle=False,
+                              num_workers=a.workers, pin_memory=True, persistent_workers=True)
 
-    # Model/opt
-    model = ResNet18()
-    model = model.to(device, memory_format=torch.channels_last) if use_cuda else model.to(device)
-    if hasattr(torch, "compile"):
-        try:
-            model = torch.compile(model)
-        except Exception:
-            pass
-
+    # Model / Opt (baseline: NO compile, NO AMP)
+    model = ResNet18().to(device)
     opt = torch.optim.SGD(model.parameters(), lr=a.lr, momentum=0.9, weight_decay=a.wd, nesterov=True)
+    steps_per_epoch = len(train_loader)  # critical: step count per-iteration scheduler
 
-    # One-cycle schedule
-    steps_per_epoch = math.ceil(len(train_loader.dataset) / a.batch)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         opt, max_lr=a.lr, epochs=a.epochs, steps_per_epoch=steps_per_epoch,
         pct_start=0.15, div_factor=25, final_div_factor=1e4
     )
-
-    scaler = torch.amp.GradScaler("cuda", enabled=use_cuda)
     ema = EMA(model, decay=a.ema)
 
-    best = 0.0
+    best_val = 0.0
     for epoch in range(a.epochs):
         model.train()
         t0 = time.time()
         for imgs, labels in train_loader:
-            imgs = imgs.to(device, non_blocking=True,
-                           memory_format=torch.channels_last if use_cuda else torch.contiguous_format)
+            imgs = imgs.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            # MixUp/CutMix
-            imgs, targets = mixup_cutmix(imgs, labels, num_classes=10, alpha=a.mixup_alpha, cutmix_prob=0.5)
+            # Hard-label CE; no MixUp/CutMix for the baseline
+            logits = model(imgs)
+            loss = F.cross_entropy(logits, labels)
 
-            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_cuda):
-                logits = model(imgs)
-                # Cross-entropy with soft targets
-                loss = -(targets * F.log_softmax(logits, dim=1)).sum(dim=1).mean()
-
-            scaler.scale(loss).backward()
-            scaler.step(opt); scaler.update()
-            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            opt.step(); opt.zero_grad(set_to_none=True)
             scheduler.step()
             ema.update(model)
 
         tr_time = time.time() - t0
 
-        # --- Eval with EMA weights ---
+        # ---- Validation with EMA weights ----
         model.eval()
         backup = ema.apply_to(model)
+
         correct = tot = 0
-        with torch.no_grad(), torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_cuda):
-            for imgs, labels in test_loader:
-                imgs = imgs.to(device, non_blocking=True,
-                               memory_format=torch.channels_last if use_cuda else torch.contiguous_format)
+        with torch.no_grad():
+            for imgs, labels in val_loader:
+                imgs = imgs.to(device, non_blocking=True)
                 labels = labels.to(device, non_blocking=True)
                 logits = model(imgs)
                 pred = logits.argmax(1)
                 tot += labels.size(0)
                 correct += (pred == labels).sum().item()
+        val_acc = 100.0 * correct / tot
+        best_val = max(best_val, val_acc)
+        print(f"Epoch {epoch+1:02d}/{a.epochs} | {tr_time:.1f}s | val acc {val_acc:.2f}% | best {best_val:.2f}%")
+
         ema.restore(model, backup)
 
-        acc = 100.0 * correct / tot
-        best = max(best, acc)
-        summary = {
-            "epoch": epoch + 1,
-            "epochs": a.epochs,
-            "train_time_sec": round(tr_time, 3),
-            "test_acc": round(acc, 3),
-            "best_acc": round(best, 3),
-        }
-        print(f"Epoch {epoch+1:02d}/{a.epochs} | {tr_time:.1f}s | test acc {acc:.2f}% | best {best:.2f}%")
-        with open(os.path.join(run_dir, "metrics.jsonl"), "a") as f:
-            f.write(json.dumps(summary) + "\n")
+    # ---- Final Test (EMA weights) ----
+    model.eval()
+    backup = ema.apply_to(model)
+    correct = tot = 0
+    with torch.no_grad():
+        for imgs, labels in test_loader:
+            imgs = imgs.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+            logits = model(imgs)
+            pred = logits.argmax(1)
+            tot += labels.size(0)
+            correct += (pred == labels).sum().item()
+    test_acc = 100.0 * correct / tot
+    print(f"[FINAL] test acc {test_acc:.2f}%")
 
-    # Save for inference/demo
-    ckpt_path = os.path.join(run_dir, "cifar10_resnet18_amp.pt")
-    torch.save({"model": model.state_dict()}, ckpt_path)
-    print(f"Saved model to {ckpt_path}")
+    ema.restore(model, backup)
+    torch.save({"model": model.state_dict()}, "cifar10_resnet18_baseline.pt")
+    print("Saved model to cifar10_resnet18_baseline.pt")
 
 if __name__ == "__main__":
-    main(parse_args())
+    main()
