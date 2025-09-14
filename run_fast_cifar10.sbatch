@@ -1,4 +1,3 @@
-# ~/dev/pattern-analysis-2025/run_fast_cifar10.sbatch
 #!/bin/bash
 #SBATCH --job-name=cifar10-fast
 #SBATCH --partition=comp3710
