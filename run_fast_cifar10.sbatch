@@ -1,7 +1,8 @@
+# ~/dev/pattern-analysis-2025/run_fast_cifar10.sbatch
 #!/bin/bash
 #SBATCH --job-name=cifar10-fast
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:A100:1
+#SBATCH --partition=comp3710
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=24G
 #SBATCH --time=00:30:00
@@ -9,11 +10,5 @@
 
 module purge
 module load cuda/12.1
-# If using conda:
-# source ~/miniconda3/etc/profile.d/conda.sh
-# conda activate ai
-
-# Go into the code directory where fast_cifar10.py lives
 cd ~/dev/pattern-analysis-2025/code
-
 python fast_cifar10.py --epochs 32 --batch 1024 --workers 8 --out_dir /home/$USER/runs
