@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:a100
 #SBATCH --job-name=test_resnet
-#SBATCH -o torch_test.out
+#SBATCH -o test_resnet.out
 conda activate recognition
 python code/test_cifar10.py \
   --ckpt "$CKPT" \
