@@ -1,5 +1,5 @@
 # DO NOT RUN ON LOCAL COMPUTER; Google Colab and Ranpur
-# fast_cifar10.py  — baseline that learns + proper val split
+# fast_cifar10.py  — baseline that learns + proper val split + runtime tracking
 
 import math, time, os, random
 from dataclasses import dataclass
@@ -103,7 +103,8 @@ class Args:
     workers: int = 8
     ema: float = 0.999
     seed: int = 42
-    val_size: int = 5000  # from CIFAR-10 train set (50k)
+    val_size: int = 5000   # from CIFAR-10 train set (50k)
+    log_interval: int = 100  # print every N steps
 
 def parse_args():
     ap = ArgumentParser()
@@ -155,7 +156,7 @@ def main():
     # Model / Opt (baseline: NO compile, NO AMP)
     model = ResNet18().to(device)
     opt = torch.optim.SGD(model.parameters(), lr=a.lr, momentum=0.9, weight_decay=a.wd, nesterov=True)
-    steps_per_epoch = len(train_loader)  # critical: step count per-iteration scheduler
+    steps_per_epoch = len(train_loader)  # per-iteration scheduler
 
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
         opt, max_lr=a.lr, epochs=a.epochs, steps_per_epoch=steps_per_epoch,
@@ -163,26 +164,46 @@ def main():
     )
     ema = EMA(model, decay=a.ema)
 
+    # --------------------------
+    # RUNTIME TRACKING
+    # --------------------------
+    print("Training")
+    overall_start = time.time()
+
     best_val = 0.0
     for epoch in range(a.epochs):
         model.train()
-        t0 = time.time()
-        for imgs, labels in train_loader:
+        epoch_start = time.time()
+
+        total_step = len(train_loader)
+        running_loss = 0.0
+
+        for i, (imgs, labels) in enumerate(train_loader):
             imgs = imgs.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
 
-            # Hard-label CE; no MixUp/CutMix for the baseline
             logits = model(imgs)
             loss = F.cross_entropy(logits, labels)
 
+            opt.zero_grad(set_to_none=True)
             loss.backward()
-            opt.step(); opt.zero_grad(set_to_none=True)
+            opt.step()
             scheduler.step()
             ema.update(model)
 
-        tr_time = time.time() - t0
+            running_loss += loss.item()
+
+            if (i + 1) % a.log_interval == 0 or (i + 1) == total_step:
+                avg_loss = running_loss / (i + 1)
+                print(f"Epoch [{epoch+1}/{a.epochs}] "
+                      f"Step [{i+1}/{total_step}] "
+                      f"LR {scheduler.get_last_lr()[0]:.5f} "
+                      f"Loss {loss.item():.4f} (avg {avg_loss:.4f})")
+
+        train_epoch_time = time.time() - epoch_start
 
         # ---- Validation with EMA weights ----
+        val_start = time.time()
         model.eval()
         backup = ema.apply_to(model)
 
@@ -195,13 +216,19 @@ def main():
                 pred = logits.argmax(1)
                 tot += labels.size(0)
                 correct += (pred == labels).sum().item()
-        val_acc = 100.0 * correct / tot
-        best_val = max(best_val, val_acc)
-        print(f"Epoch {epoch+1:02d}/{a.epochs} | {tr_time:.1f}s | val acc {val_acc:.2f}% | best {best_val:.2f}%")
 
         ema.restore(model, backup)
+        val_time = time.time() - val_start
+
+        val_acc = 100.0 * correct / tot
+        best_val = max(best_val, val_acc)
+        print(f"Epoch {epoch+1:02d}/{a.epochs} | "
+              f"train {train_epoch_time:.1f}s | "
+              f"val {val_time:.1f}s | "
+              f"val acc {val_acc:.2f}% | best {best_val:.2f}%")
 
     # ---- Final Test (EMA weights) ----
+    test_start = time.time()
     model.eval()
     backup = ema.apply_to(model)
     correct = tot = 0
@@ -213,10 +240,18 @@ def main():
             pred = logits.argmax(1)
             tot += labels.size(0)
             correct += (pred == labels).sum().item()
+    test_time = time.time() - test_start
     test_acc = 100.0 * correct / tot
-    print(f"[FINAL] test acc {test_acc:.2f}%")
+    print(f"[FINAL] test acc {test_acc:.2f}% | test time {test_time:.1f}s")
 
     ema.restore(model, backup)
+
+    # Overall runtime
+    overall_elapsed = time.time() - overall_start
+    print(f"Training took: {overall_elapsed:.1f} seconds "
+          f"({overall_elapsed/60:.2f} minutes)")
+
+    # Save
     torch.save({"model": model.state_dict()}, "cifar10_resnet18_baseline.pt")
     print("Saved model to cifar10_resnet18_baseline.pt")
 
