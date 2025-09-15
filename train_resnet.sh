@@ -14,7 +14,7 @@ module load anaconda3
 source $(conda info --base)/etc/profile.d/conda.sh
 
 # Activate your Conda env
-conda activate ai
+conda activate recognition
 
 cd ~/dev/pattern-analysis-2025/code
 

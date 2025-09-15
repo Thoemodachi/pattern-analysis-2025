@@ -1,4 +1,4 @@
-name: ai
+name: recognition
 channels:
   - defaults
   - conda-forge

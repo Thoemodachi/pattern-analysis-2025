@@ -16,7 +16,7 @@ module load anaconda3
 source $(conda info --base)/etc/profile.d/conda.sh
 
 # activate your environment (replace ai with your env name)
-conda activate ai
+conda activate recognition
 
 # --------------------------
 # Run test script
