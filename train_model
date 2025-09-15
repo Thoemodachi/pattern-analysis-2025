@@ -3,7 +3,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:a100
-#SBATCH --job-name=torch_test
+#SBATCH --job-name=train_resnet
 #SBATCH -o torch_test.out
 conda activate recognition
 python code/fast_cifar10.py --epochs 60 --batch 128 --workers 8 --lr 0.1
