@@ -1,9 +1,0 @@
-#!/bin/bash
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
-#SBATCH --gres=gpu:a100
-#SBATCH --job-name=test_resnet
-#SBATCH -o test_resnet.out
-conda activate comp3710
-python code/test_cifar10.py --ckpt "$CKPT" --batch 2048 --workers 8 --amp true

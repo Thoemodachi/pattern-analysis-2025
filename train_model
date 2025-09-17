@@ -1,9 +1,0 @@
-#!/bin/bash
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=1
-#SBATCH --gres=gpu:a100
-#SBATCH --job-name=train_resnet
-#SBATCH -o train_resnet.out
-conda activate comp3710
-python code/fast_cifar10.py --epochs 60 --batch 128 --workers 1 --lr 0.1

@@ -1,0 +1,12 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --gres=gpu:a100
+#SBATCH --job-name=infer_model
+#SBATCH -o infer_model.out
+
+conda activate torch
+
+# Use the checkpoint saved by your baseline trainer
+python code/inference.py --data ./data --ckpt cifar10_resnet18_baseline.pt --batch 128 --workers 1
