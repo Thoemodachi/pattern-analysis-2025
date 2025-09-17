@@ -1,0 +1,12 @@
+#!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --gres=gpu:a100
+#SBATCH --job-name=train_model
+#SBATCH -o train_model.out
+
+conda activate torch
+
+# Use the checkpoint saved by your baseline trainer
+python fast_cifar10.py

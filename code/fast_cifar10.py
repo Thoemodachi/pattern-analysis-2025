@@ -252,8 +252,8 @@ def main():
           f"({overall_elapsed/60:.2f} minutes)")
 
     # Save
-    torch.save({"model": model.state_dict()}, "cifar10_resnet18_baseline.pt")
-    print("Saved model to cifar10_resnet18_baseline.pt")
+    torch.save({"model": model.state_dict()}, "trained_model.pt")
+    print("Saved model to trained_model.pt")
 
 if __name__ == "__main__":
     main()
