@@ -125,7 +125,7 @@ def main():
     out, preds, labels = eval_testset(model, loader, device, use_cuda, save_preds=args.save_preds or None)
     print(json.dumps({"mode":"testset", **out}, indent=2))
 
-    # Optional confusion matrix (printed as a compact list of lists)
+    # Confusion matrix (printed as a compact list of lists)
     cm = confusion_matrix(preds, labels, num_classes=10).tolist()
     print(json.dumps({"confusion_matrix": cm, "classes": CIFAR10_CLASSES}, indent=2))
 

@@ -9,4 +9,4 @@
 conda activate torch
 
 # Use the checkpoint saved by your baseline trainer
-python fast_cifar10.py
+python code/fast_cifar10.py
