@@ -5,9 +5,5 @@
 #SBATCH --gres=gpu:a100
 #SBATCH --job-name=test_resnet
 #SBATCH -o test_resnet.out
-conda activate recognition
-python code/test_cifar10.py \
-  --ckpt "$CKPT" \
-  --batch 2048 \
-  --workers 8 \
-  --amp true
+conda activate comp3710
+python code/test_cifar10.py --ckpt "$CKPT" --batch 2048 --workers 8 --amp true

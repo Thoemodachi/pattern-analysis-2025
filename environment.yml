@@ -1,15 +1,17 @@
-name: recognition
+name: comp3710
 channels:
+  - pytorch
+  - nvidia
   - defaults
   - conda-forge
 dependencies:
   - python=3.10
-  - pip
   - numpy
   - pillow
+  - pytorch::pytorch=2.2.*
+  - pytorch::torchvision=0.17.*
+  - pytorch-cuda=12.1
+  - pip
   - matplotlib
+  - umap-learn
   - scikit-learn
-  - pip:
-      - torch
-      - torchvision
-      - umap-learn
