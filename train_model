@@ -8,5 +8,6 @@
 
 conda activate torch
 
-# Use the checkpoint saved by your baseline trainer
-python code/fast_cifar10.py
+cd ~/dev/pattern-analysis-2025/code
+
+python fast_cifar10.py
