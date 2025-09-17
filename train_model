@@ -6,4 +6,4 @@
 #SBATCH --job-name=train_resnet
 #SBATCH -o train_resnet.out
 conda activate comp3710
-python code/fast_cifar10.py --epochs 60 --batch 128 --workers 8 --lr 0.1
+python code/fast_cifar10.py --epochs 60 --batch 128 --workers 1 --lr 0.1

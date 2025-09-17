@@ -100,7 +100,7 @@ class Args:
     epochs: int = 60
     lr: float = 0.1
     wd: float = 5e-4
-    workers: int = 8
+    workers: int = 1
     ema: float = 0.999
     seed: int = 42
     val_size: int = 5000   # from CIFAR-10 train set (50k)
