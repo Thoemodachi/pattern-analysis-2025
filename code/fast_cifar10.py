@@ -97,7 +97,7 @@ class ResNet18(nn.Module):
 class Args:
     data: str = "./data"
     batch: int = 128
-    epochs: int = 60
+    epochs: int = 40
     lr: float = 0.1
     wd: float = 5e-4
     workers: int = 1
